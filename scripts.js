@@ -1,10 +1,11 @@
+
 // DOM Elements
 const board = document.getElementById('board');
 const statusText = document.getElementById('status');
 const resetBtn = document.getElementById('reset');
 const resetScoresBtn = document.getElementById('resetScores');
 const xScoreEl = document.getElementById('xScore');
-const oScoreEl = document.getElementById('oScore');
+let oScoreEl = document.getElementById('oScore'); // will be reassigned when needed
 const oLabel = document.getElementById('oLabel');
 const difficultySelect = document.getElementById('difficulty');
 const modeSelect = document.getElementById('mode');
@@ -21,21 +22,27 @@ let difficulty = 'medium';
 
 // Winning Patterns
 const WIN_PATTERNS = [
-  [0, 1, 2], [3, 4, 5], [6, 7, 8],
-  [0, 3, 6], [1, 4, 7], [2, 5, 8],
-  [0, 4, 8], [2, 4, 6],
+  [0,1,2],[3,4,5],[6,7,8],
+  [0,3,6],[1,4,7],[2,5,8],
+  [0,4,8],[2,4,6],
 ];
 
-// Bridget voice
+// Voice control (fixed)
+let isSpeaking = false;
 const bridgetSpeak = async (text) => {
+  if (isSpeaking) return;
+  isSpeaking = true;
+
   try {
-    const voiceName = "Joanna"; // change to Amy, Brian, Emma, etc.
-    const audioURL = `https://api.streamelements.com/kappa/v2/speech?voice=${voiceName}&text=${encodeURIComponent(text)}`;
-    const audio = new Audio(audioURL);
+    const audio = new Audio(
+      `https://api.streamelements.com/kappa/v2/speech?voice=Joanna&text=${encodeURIComponent(text)}`
+    );
     await audio.play();
   } catch (err) {
     console.error("Voice error:", err);
   }
+
+  isSpeaking = false;
 };
 
 // Create board
@@ -47,13 +54,21 @@ for (let i = 0; i < 9; i++) {
   cell.addEventListener('click', () => makeMove(i));
 }
 
-// Mode & Difficulty
+// Mode change (FIXED)
 modeSelect.addEventListener('change', (e) => {
   mode = e.target.value;
-  oLabel.innerHTML = mode === 'ai' ? '🤖 Bridget: <span id="oScore">' + oScore + '</span>' : '🧑 Player O: <span id="oScore">' + oScore + '</span>';
+
+  oLabel.innerHTML = mode === 'ai'
+    ? '🤖 Bridget O: <span id="oScore"></span>'
+    : '🧑 Player O: <span id="oScore"></span>';
+
+  oScoreEl = document.getElementById('oScore');
+  oScoreEl.textContent = oScore;
+
   resetGame();
 });
 
+// Difficulty change
 difficultySelect.addEventListener('change', (e) => {
   difficulty = e.target.value;
 });
@@ -66,127 +81,112 @@ const makeMove = (index) => {
   board.children[index].textContent = currentPlayer;
 
   const winPattern = getWinnerPattern(cells, currentPlayer);
+
   if (winPattern) {
     highlightWin(winPattern);
-    const winType = describeWin(winPattern);
-    const winnerName = currentPlayer === 'O' && mode === 'ai' ? 'Bridget 🤖' : `Player ${currentPlayer}`;
-    statusText.textContent = `🎉 ${winnerName} wins! (${winType})`;
+
+    const winnerName =
+      currentPlayer === 'O' && mode === 'ai'
+        ? 'Bridget 🤖'
+        : `Player ${currentPlayer}`;
+
+    statusText.textContent = `🎉 ${winnerName} wins!`;
     updateScore(currentPlayer);
     gameOver = true;
-    if (currentPlayer === 'O' && mode === 'ai') bridgetSpeak(`Yay! I won with a ${winType}!`);
-    else bridgetSpeak(`Good job, Player ${currentPlayer}. You win!`);
+
+    bridgetSpeak(
+      currentPlayer === 'O' ? "I win!" : "Nice move! You win!"
+    );
+
     return;
   }
 
   if (isDraw(cells)) {
     statusText.textContent = "😐 It's a draw!";
     gameOver = true;
-    bridgetSpeak("It's a draw. Let's call it even!");
+    bridgetSpeak("It's a draw!");
     return;
   }
 
   currentPlayer = currentPlayer === 'X' ? 'O' : 'X';
+
   if (mode === 'ai' && currentPlayer === 'O') {
     statusText.textContent = "Bridget 🤖 is thinking...";
-    bridgetSpeak("Hmm... Let me think.");
-    setTimeout(computerMove, 700);
+    setTimeout(computerMove, 600);
   } else {
     statusText.textContent = `Player ${currentPlayer}'s turn`;
   }
 };
 
-// Computer move logic
+// AI move
 const computerMove = () => {
   if (gameOver) return;
+
   let move;
   if (difficulty === 'easy') move = getRandomMove();
-  else if (difficulty === 'medium') move = Math.random() < 0.5 ? getRandomMove() : findBestMove(cells);
+  else if (difficulty === 'medium')
+    move = Math.random() < 0.5 ? getRandomMove() : findBestMove(cells);
   else move = findBestMove(cells);
 
-  cells[move] = 'O';
-  board.children[move].textContent = 'O';
-
-  const winPattern = getWinnerPattern(cells, 'O');
-  if (winPattern) {
-    highlightWin(winPattern);
-    const winType = describeWin(winPattern);
-    statusText.textContent = `🤖 Bridget wins! (${winType})`;
-    updateScore('O');
-    gameOver = true;
-    bridgetSpeak(`I win! That was a ${winType}. Better luck next time!`);
-    return;
-  }
-
-  if (isDraw(cells)) {
-    statusText.textContent = "😐 It's a draw!";
-    gameOver = true;
-    bridgetSpeak("That was close. A draw!");
-    return;
-  }
-
-  currentPlayer = 'X';
-  statusText.textContent = "Player X's turn";
+  makeMove(move);
 };
 
 // Utilities
 const getWinnerPattern = (boardState, player) => {
-  for (const pattern of WIN_PATTERNS) {
-    const [a, b, c] = pattern;
-    if (boardState[a] === player && boardState[b] === player && boardState[c] === player)
-      return pattern;
-  }
-  return null;
+  return WIN_PATTERNS.find(([a,b,c]) =>
+    boardState[a] === player &&
+    boardState[b] === player &&
+    boardState[c] === player
+  );
 };
 
-const describeWin = (pattern) => {
-  if ([0, 1, 2].every(i => pattern.includes(i))) return 'Horizontal (Top Row)';
-  if ([3, 4, 5].every(i => pattern.includes(i))) return 'Horizontal (Middle Row)';
-  if ([6, 7, 8].every(i => pattern.includes(i))) return 'Horizontal (Bottom Row)';
-  if ([0, 3, 6].every(i => pattern.includes(i))) return 'Vertical (Left Column)';
-  if ([1, 4, 7].every(i => pattern.includes(i))) return 'Vertical (Middle Column)';
-  if ([2, 5, 8].every(i => pattern.includes(i))) return 'Vertical (Right Column)';
-  if ([0, 4, 8].every(i => pattern.includes(i))) return 'Diagonal (↘)';
-  if ([2, 4, 6].every(i => pattern.includes(i))) return 'Diagonal (↙)';
-  return '';
-};
+const highlightWin = (pattern) =>
+  pattern.forEach(i => board.children[i].classList.add('win'));
 
-const highlightWin = (pattern) => pattern.forEach(i => board.children[i].classList.add('win'));
 const isDraw = (b) => b.every(cell => cell);
+
 const getRandomMove = () => {
-  const empty = cells.map((v, i) => (v ? null : i)).filter(v => v !== null);
+  const empty = cells.map((v,i) => (v ? null : i)).filter(v => v !== null);
   return empty[Math.floor(Math.random() * empty.length)];
 };
 
-const minimax = (boardState, depth, isMax) => {
-  if (getWinnerPattern(boardState, 'O')) return 10 - depth;
-  if (getWinnerPattern(boardState, 'X')) return depth - 10;
+// Minimax AI
+const minimax = (boardState, isMax) => {
+  if (getWinnerPattern(boardState, 'O')) return 1;
+  if (getWinnerPattern(boardState, 'X')) return -1;
   if (isDraw(boardState)) return 0;
+
   let best = isMax ? -Infinity : Infinity;
+
   for (let i = 0; i < 9; i++) {
     if (!boardState[i]) {
       boardState[i] = isMax ? 'O' : 'X';
-      const score = minimax(boardState, depth + 1, !isMax);
+      let score = minimax(boardState, !isMax);
       boardState[i] = null;
       best = isMax ? Math.max(best, score) : Math.min(best, score);
     }
   }
+
   return best;
 };
 
 const findBestMove = (b) => {
   let bestScore = -Infinity;
   let move;
+
   for (let i = 0; i < 9; i++) {
     if (!b[i]) {
       b[i] = 'O';
-      const score = minimax(b, 0, false);
+      let score = minimax(b, false);
       b[i] = null;
+
       if (score > bestScore) {
         bestScore = score;
         move = i;
       }
     }
   }
+
   return move;
 };
 
@@ -195,44 +195,47 @@ const updateScore = (player) => {
   if (player === 'X') xScoreEl.textContent = ++xScore;
   else oScoreEl.textContent = ++oScore;
 };
+
 const resetGame = () => {
   cells = Array(9).fill(null);
-  Array.from(board.children).forEach(c => { c.textContent = ''; c.classList.remove('win'); });
+  Array.from(board.children).forEach(c => {
+    c.textContent = '';
+    c.classList.remove('win');
+  });
+
   gameOver = false;
   currentPlayer = 'X';
   statusText.textContent = "Player X's turn";
-  if (mode === 'ai' && Math.random() < 0.5) {
-    statusText.textContent = "🤖 Bridget starts...";
-    bridgetSpeak("I'll start this round!");
-    setTimeout(computerMove, 700);
-  }
 };
+
 const resetScores = () => {
-  xScore = 0; oScore = 0;
-  xScoreEl.textContent = '0'; oScoreEl.textContent = '0';
+  xScore = 0;
+  oScore = 0;
+
+  xScoreEl.textContent = '0';
+  oScoreEl.textContent = '0';
+
   resetGame();
 };
 
-// Share feature
+// Share
 shareBtn.addEventListener('click', async () => {
   const message = `🎮 Tic Tac Toe Scores:
-🧑 Player X: ${xScore}
-🤖 Bridget: ${oScore}
+X: ${xScore}
+O: ${oScore}
+Play: ${window.location.href}`;
 
-Mode: ${mode === 'ai' ? 'Human vs Bridget 🤖' : 'Human vs Human'}
-Difficulty: ${difficulty.toUpperCase()}
-
-Play it now! 🔗 ${window.location.href}`;
   if (navigator.share) {
-    try { await navigator.share({ title: 'Tic Tac Toe', text: message, url: window.location.href }); }
-    catch (err) { console.warn(err); }
-  } else if (navigator.clipboard) {
-    await navigator.clipboard.writeText(message);
-    alert('✅ Game summary copied!');
-  } else prompt('Copy this text:', message);
+    await navigator.share({ text: message });
+  } else {
+    navigator.clipboard.writeText(message);
+    alert('Copied!');
+  }
 });
 
-// Start
+// Buttons
 resetBtn.addEventListener('click', resetGame);
 resetScoresBtn.addEventListener('click', resetScores);
+
+// Start
 resetGame();
